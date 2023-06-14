@@ -57,7 +57,11 @@ func getProveBlocksTxOpts(
 		}
 	}
 
+	fmt.Printf("gasTipCap: %v\n", gasTipCap)
+
 	gasTipCap = gasTipCap.Mul(gasTipCap, big.NewInt(1500000))
+
+	fmt.Printf("gasTipCap: %v\n", gasTipCap)
 
 	opts.GasTipCap = gasTipCap
 
