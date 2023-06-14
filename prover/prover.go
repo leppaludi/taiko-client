@@ -208,7 +208,8 @@ func InitFromConfig(ctx context.Context, p *Prover, cfg *Config) (err error) {
 
 	// Proof submitter
 	if p.validProofSubmitter, err = proofSubmitter.NewValidProofSubmitter(
-		p.rpcHttp,
+		p.rpc,
+		// p.rpcHttp,
 		producer,
 		p.proofGenerationCh,
 		p.cfg.TaikoL2Address,
