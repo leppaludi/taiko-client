@@ -37,8 +37,7 @@ type Prover struct {
 	systemProverAddress common.Address
 
 	// Clients
-	rpc     *rpc.Client
-	rpcHttp *rpc.Client
+	rpc *rpc.Client
 
 	// Contract configurations
 	txListValidator *txListValidator.TxListValidator
@@ -98,17 +97,6 @@ func InitFromConfig(ctx context.Context, p *Prover, cfg *Config) (err error) {
 	if p.rpc, err = rpc.NewClient(p.ctx, &rpc.ClientConfig{
 		L1Endpoint:     cfg.L1WsEndpoint,
 		L2Endpoint:     cfg.L2WsEndpoint,
-		TaikoL1Address: cfg.TaikoL1Address,
-		TaikoL2Address: cfg.TaikoL2Address,
-		RetryInterval:  cfg.BackOffRetryInterval,
-	}); err != nil {
-		return err
-	}
-
-	// Clients
-	if p.rpcHttp, err = rpc.NewClient(p.ctx, &rpc.ClientConfig{
-		L1Endpoint:     cfg.L1HttpEndpoint,
-		L2Endpoint:     cfg.L2HttpEndpoint,
 		TaikoL1Address: cfg.TaikoL1Address,
 		TaikoL2Address: cfg.TaikoL2Address,
 		RetryInterval:  cfg.BackOffRetryInterval,
@@ -209,7 +197,6 @@ func InitFromConfig(ctx context.Context, p *Prover, cfg *Config) (err error) {
 	// Proof submitter
 	if p.validProofSubmitter, err = proofSubmitter.NewValidProofSubmitter(
 		p.rpc,
-		// p.rpcHttp,
 		producer,
 		p.proofGenerationCh,
 		p.cfg.TaikoL2Address,
