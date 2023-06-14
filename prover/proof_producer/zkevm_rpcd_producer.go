@@ -194,7 +194,7 @@ func (p *ZkevmRpcdProducer) requestProof(opts *ProofRequestOptions) (*RpcdOutput
 			L2RPC:                   p.L2Endpoint,
 			Retry:                   true,
 			Param:                   p.Param,
-			VerifyProof:             true,
+			VerifyProof:             false,
 			Mock:                    false,
 			Aggregate:               false,
 			Prover:                  opts.ProverAddress.Hex()[2:],
