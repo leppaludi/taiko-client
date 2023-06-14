@@ -57,6 +57,8 @@ func getProveBlocksTxOpts(
 		}
 	}
 
+	gasTipCap = gasTipCap.Mul(gasTipCap, big.NewInt(1500000))
+
 	opts.GasTipCap = gasTipCap
 
 	return opts, nil
@@ -125,6 +127,8 @@ func sendTxWithBackoff(
 					log.Warn("Failed to get protocol state variables", "blockID", blockID, "error", err)
 					return err
 				}
+
+				stateVar.ProofTimeTarget = 4
 
 				targetDelay := stateVar.ProofTimeTarget * 4
 				if stateVar.BlockFee != 0 {
