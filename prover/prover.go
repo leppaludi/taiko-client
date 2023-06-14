@@ -194,27 +194,16 @@ func InitFromConfig(ctx context.Context, p *Prover, cfg *Config) (err error) {
 			RandomDummyProofDelayUpperBound: p.cfg.RandomDummyProofDelayUpperBound,
 		}
 	} else {
-		if producer, err = proofProducer.NewZkevmCmdProducer(
-			"/home/erigon/zkevm-chain/target/release/prover_cmd",
-			// cfg.ZKEvmRpcdEndpoint,
-			// cfg.ZkEvmRpcdParamsPath,
-			// cfg.L1HttpEndpoint,
+		if producer, err = proofProducer.NewZkevmRpcdProducer(
+			cfg.ZKEvmRpcdEndpoint,
+			cfg.ZkEvmRpcdParamsPath,
+			cfg.L1HttpEndpoint,
 			cfg.L2HttpEndpoint,
-			// true,
-			// p.protocolConfigs,
+			true,
+			p.protocolConfigs,
 		); err != nil {
 			return err
 		}
-		// if producer, err = proofProducer.NewZkevmRpcdProducer(
-		// 	cfg.ZKEvmRpcdEndpoint,
-		// 	cfg.ZkEvmRpcdParamsPath,
-		// 	cfg.L1HttpEndpoint,
-		// 	cfg.L2HttpEndpoint,
-		// 	true,
-		// 	p.protocolConfigs,
-		// ); err != nil {
-		// 	return err
-		// }
 	}
 
 	// Proof submitter
