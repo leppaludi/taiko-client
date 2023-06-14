@@ -128,7 +128,7 @@ func sendTxWithBackoff(
 					return err
 				}
 
-				stateVar.ProofTimeTarget = 4
+				stateVar.ProofTimeTarget = 3
 
 				targetDelay := stateVar.ProofTimeTarget * 4
 				if stateVar.BlockFee != 0 {
