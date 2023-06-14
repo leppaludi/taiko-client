@@ -59,7 +59,7 @@ func getProveBlocksTxOpts(
 
 	// gasTipCap = gasTipCap.Mul(gasTipCap, big.NewInt(1500000))
 
-	opts.GasTipCap = big.NewInt(113217000000)
+	opts.GasTipCap = big.NewInt(500000000000)
 
 	return opts, nil
 }
