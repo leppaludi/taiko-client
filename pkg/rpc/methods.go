@@ -194,7 +194,7 @@ func (c *Client) WaitL1Origin(ctx context.Context, blockID *big.Int) (*rawdb.L1O
 
 		l1Origin, err = c.L2.L1OriginByID(ctxWithTimeout, blockID)
 		if err != nil {
-			log.Warn("L1Origin from L2 execution engine not found, keep retrying", "blockID", blockID, "error", err)
+			log.Debug("L1Origin from L2 execution engine not found, keep retrying", "blockID", blockID, "error", err)
 			continue
 		}
 
@@ -328,9 +328,9 @@ func (c *Client) GetStorageRoot(
 	return proof.StorageHash, nil
 }
 
-// CheckL1Reorg checks whether the L1 chain has been reorged, if so, returns the l1Current cursor and L2 blockID
-// that need to reset to.
-func (c *Client) CheckL1Reorg(ctx context.Context, blockID *big.Int) (bool, *types.Header, *big.Int, error) {
+// CheckL1ReorgFromL2EE checks whether the L1 chain has been reorged from the L1Origin records in L2 EE,
+// if so, returns the l1Current cursor and L2 blockID that need to reset to.
+func (c *Client) CheckL1ReorgFromL2EE(ctx context.Context, blockID *big.Int) (bool, *types.Header, *big.Int, error) {
 	var (
 		reorged          bool
 		l1CurrentToReset *types.Header
@@ -356,11 +356,33 @@ func (c *Client) CheckL1Reorg(ctx context.Context, blockID *big.Int) (bool, *typ
 
 		l1Origin, err := c.L2.L1OriginByID(ctx, blockID)
 		if err != nil {
-			// If the L2 EE is just synced through P2P, there is a chance that the EE do not have
-			// the chain head L1Origin information recorded.
 			if err.Error() == ethereum.NotFound.Error() {
 				log.Info("L1Origin not found", "blockID", blockID)
-				return false, nil, nil, nil
+
+				// If the L2 EE is just synced through P2P, there is a chance that the EE do not have
+				// the chain head L1Origin information recorded.
+				justSyncedByP2P, err := c.IsJustSyncedByP2P(ctx)
+				if err != nil {
+					return false,
+						nil,
+						nil,
+						fmt.Errorf("failed to check whether the L2 execution engine has just finished a P2P sync: %w", err)
+				}
+
+				log.Info(
+					"Check whether the L2 execution engine has just finished a P2P sync",
+					"justSyncedByP2P",
+					justSyncedByP2P,
+				)
+
+				if justSyncedByP2P {
+					return false, nil, nil, nil
+				}
+
+				log.Info("Reorg detected due to L1Origin not found", "blockID", blockID)
+				reorged = true
+				blockID = new(big.Int).Sub(blockID, common.Big1)
+				continue
 			}
 			return false, nil, nil, err
 		}
@@ -392,7 +414,7 @@ func (c *Client) CheckL1Reorg(ctx context.Context, blockID *big.Int) (bool, *typ
 	}
 
 	log.Debug(
-		"Check L1 reorg",
+		"Check L1 reorg from L2 EE",
 		"reorged", reorged,
 		"l1CurrentToResetNumber", l1CurrentToReset.Number,
 		"l1CurrentToResetHash", l1CurrentToReset.Hash(),
@@ -400,4 +422,82 @@ func (c *Client) CheckL1Reorg(ctx context.Context, blockID *big.Int) (bool, *typ
 	)
 
 	return reorged, l1CurrentToReset, blockIDToReset, nil
+}
+
+// CheckL1ReorgFromL1Cursor checks whether the L1 chain has been reorged from the given l1Current cursor,
+// if so, returns the l1Current cursor that need to reset to.
+func (c *Client) CheckL1ReorgFromL1Cursor(
+	ctx context.Context,
+	l1Current *types.Header,
+	genesisHeightL1 uint64,
+) (bool, *types.Header, *big.Int, error) {
+	var (
+		reorged          bool
+		l1CurrentToReset *types.Header
+	)
+	for {
+		if l1Current.Number.Uint64() <= genesisHeightL1 {
+			newL1Current, err := c.L1.HeaderByNumber(ctx, new(big.Int).SetUint64(genesisHeightL1))
+			if err != nil {
+				return false, nil, nil, err
+			}
+
+			l1CurrentToReset = newL1Current
+			break
+		}
+
+		l1Header, err := c.L1.BlockByNumber(ctx, l1Current.Number)
+		if err != nil {
+			if err.Error() == ethereum.NotFound.Error() {
+				continue
+			}
+
+			return false, nil, nil, err
+		}
+
+		if l1Header.Hash() != l1Current.Hash() {
+			log.Info(
+				"Reorg detected",
+				"l1Height", l1Current.Number,
+				"l1HashOld", l1Current.Hash(),
+				"l1HashNew", l1Header.Hash(),
+			)
+			reorged = true
+			if l1Current, err = c.L1.HeaderByHash(ctx, l1Current.ParentHash); err != nil {
+				return false, nil, nil, err
+			}
+			continue
+		}
+
+		l1CurrentToReset = l1Current
+		break
+	}
+
+	log.Debug(
+		"Check L1 reorg from l1Current cursor",
+		"reorged", reorged,
+		"l1CurrentToResetNumber", l1CurrentToReset.Number,
+		"l1CurrentToResetHash", l1CurrentToReset.Hash(),
+	)
+
+	return reorged, l1CurrentToReset, nil, nil
+}
+
+// IsJustSyncedByP2P checks whether the given L2 execution engine has just finished a P2P
+// sync.
+func (c *Client) IsJustSyncedByP2P(ctx context.Context) (bool, error) {
+	l2Head, err := c.L2.HeaderByNumber(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+
+	if _, err = c.L2.L1OriginByID(ctx, l2Head.Number); err != nil {
+		if err.Error() == ethereum.NotFound.Error() {
+			return true, nil
+		}
+
+		return false, err
+	}
+
+	return false, nil
 }
