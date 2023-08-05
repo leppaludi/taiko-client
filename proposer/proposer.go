@@ -15,9 +15,9 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/taikoxyz/taiko-client/bindings"
@@ -55,6 +55,7 @@ type Proposer struct {
 	maxProposedTxListsPerEpoch uint64
 	proposeBlockTxGasLimit     *uint64
 	txReplacementTipMultiplier uint64
+	proposeBlockTxGasTipCap    *big.Int
 
 	// Protocol configurations
 	protocolConfigs *bindings.TaikoDataConfig
@@ -91,6 +92,7 @@ func InitFromConfig(ctx context.Context, p *Proposer, cfg *Config) (err error) {
 	p.commitSlot = cfg.CommitSlot
 	p.maxProposedTxListsPerEpoch = cfg.MaxProposedTxListsPerEpoch
 	p.txReplacementTipMultiplier = cfg.ProposeBlockTxReplacementMultiplier
+	p.proposeBlockTxGasTipCap = cfg.ProposeBlockTxGasTipCap
 	p.ctx = ctx
 
 	// RPC clients
@@ -100,6 +102,7 @@ func InitFromConfig(ctx context.Context, p *Proposer, cfg *Config) (err error) {
 		TaikoL1Address: cfg.TaikoL1Address,
 		TaikoL2Address: cfg.TaikoL2Address,
 		RetryInterval:  cfg.BackOffRetryInterval,
+		Timeout:        cfg.RPCTimeout,
 	}); err != nil {
 		return fmt.Errorf("initialize rpc clients error: %w", err)
 	}
@@ -349,13 +352,24 @@ func (p *Proposer) sendProposeBlockTx(
 				"Original transaction to replace",
 				"sender", p.l1ProposerAddress,
 				"nonce", nonce,
-				"tx", originalTx,
+				"gasTipCap", originalTx.GasTipCap(),
+				"gasFeeCap", originalTx.GasFeeCap(),
 			)
 
 			opts.GasTipCap = new(big.Int).Mul(
 				originalTx.GasTipCap(),
 				new(big.Int).SetUint64(p.txReplacementTipMultiplier),
 			)
+		}
+
+		if p.proposeBlockTxGasTipCap != nil && opts.GasTipCap.Cmp(p.proposeBlockTxGasTipCap) > 0 {
+			log.Info(
+				"New gasTipCap exceeds limit, keep waiting",
+				"multiplier", p.txReplacementTipMultiplier,
+				"newGasTipCap", opts.GasTipCap,
+				"maxTipCap", p.proposeBlockTxGasTipCap,
+			)
+			return nil, txpool.ErrReplaceUnderpriced
 		}
 	}
 
@@ -387,7 +401,7 @@ func (p *Proposer) ProposeTxList(
 			}
 			if tx, err = p.sendProposeBlockTx(ctx, meta, txListBytes, nonce, isReplacement); err != nil {
 				log.Warn("Failed to send propose block transaction, retrying", "error", err)
-				if strings.Contains(err.Error(), "replacement transaction underpriced") {
+				if strings.Contains(err.Error(), txpool.ErrReplaceUnderpriced.Error()) {
 					isReplacement = true
 				} else {
 					isReplacement = false
@@ -475,7 +489,7 @@ func sumTxsGasLimit(txs []*types.Transaction) uint64 {
 // getTxOpts creates a bind.TransactOpts instance using the given private key.
 func getTxOpts(
 	ctx context.Context,
-	cli *ethclient.Client,
+	cli *rpc.EthClient,
 	privKey *ecdsa.PrivateKey,
 	chainID *big.Int,
 ) (*bind.TransactOpts, error) {
